@@ -264,33 +264,43 @@ async function proxy(url, options = {}) {
 }
 
 async function aggregate(endpoints) {
+  const run = async (endpoint) => {
+    const result = typeof endpoint === "function" ? await endpoint() : await upstream(endpoint);
+
+    return {
+      success: result.ok,
+      status: result.status,
+      via: result.via,
+      attempts: result.attempts,
+      data: result.data,
+    };
+  };
+
   const entries = Object.entries(endpoints);
-  const output = [];
+  const results = {};
 
   for (let i = 0; i < entries.length; i += AGGREGATE_BATCH_SIZE) {
     const batch = entries.slice(i, i + AGGREGATE_BATCH_SIZE);
 
-    const results = await Promise.all(
+    await Promise.all(
       batch.map(async ([key, endpoint]) => {
-        const result = typeof endpoint === "function" ? await endpoint() : await upstream(endpoint);
-
-        return [
-          key,
-          {
-            success: result.ok,
-            status: result.status,
-            via: result.via,
-            attempts: result.attempts,
-            data: result.data,
-          },
-        ];
+        results[key] = await run(endpoint);
       })
     );
-
-    output.push(...results);
   }
 
-  return Object.fromEntries(output);
+  const limited = entries.filter(([key]) => results[key].status === 429);
+
+  if (limited.length) {
+    await sleep(2500);
+
+    for (const [key, endpoint] of limited) {
+      results[key] = await run(endpoint);
+      await sleep(500);
+    }
+  }
+
+  return results;
 }
 
 async function handle(request) {
