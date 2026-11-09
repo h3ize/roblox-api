@@ -23,7 +23,7 @@ const ROBLOX = {
 const ROLIMONS = "https://api.rolimons.com";
 
 const DEFAULT_HEADERS = {
-  "user-agent": "ProfileViewer-CloudflareWorker/3.3",
+  "user-agent": "ProfileViewer-CloudflareWorker/3.4",
   "accept": "application/json",
 };
 
@@ -57,7 +57,6 @@ function memGet(key) {
 
 function memSet(key, result) {
   MEM.set(key, { at: Date.now(), result });
-
   if (MEM.size > 500) {
     MEM.delete(MEM.keys().next().value);
   }
@@ -87,7 +86,6 @@ function json(data, status = 200, extraHeaders = {}) {
 
 function asInt(value, fallback, min = 1, max = 100) {
   const n = Number.parseInt(value, 10);
-
   return Number.isFinite(n)
     ? Math.max(min, Math.min(max, n))
     : fallback;
@@ -126,15 +124,12 @@ function pagination(url, fallback = 50, max = 100) {
     limit: String(getLimit(url, fallback, max)),
     sortOrder: url.searchParams.get("sortOrder") || "Asc",
   });
-
   const cursor = cleanCursor(
     url.searchParams.get("cursor")
   );
-
   if (cursor) {
     query.set("cursor", cursor);
   }
-
   return query;
 }
 
@@ -149,30 +144,24 @@ function sleep(ms) {
 
 async function rz(endpoint, params, fallbackUrl) {
   const cachedHit = fallbackUrl ? memGet(fallbackUrl) : null;
-
   if (cachedHit && Date.now() - cachedHit.at < FRESH_MS) {
     return { ...cachedHit.result, via: "cache" };
   }
 
   let result = null;
-
   try {
     const response = await Promise.race([
       fetchApi(endpoint, params, { returnRaw: true, retries: 0 }),
       sleep(6000).then(() => null),
     ]);
-
     if (response) {
       const text = await response.text();
-
       let data;
-
       try {
         data = text ? JSON.parse(text) : {};
       } catch {
         data = { raw: text.slice(0, 2000) };
       }
-
       result = {
         ok: response.ok,
         status: response.status,
@@ -191,7 +180,6 @@ async function rz(endpoint, params, fallbackUrl) {
     if (result.ok && fallbackUrl) {
       memSet(fallbackUrl, result);
     }
-
     return result;
   }
 
@@ -213,15 +201,12 @@ function respond(result) {
 
 async function upstream(url, options = {}) {
   const method = options.method || "GET";
-
   const hit = method === "GET" ? memGet(url) : null;
-
   if (hit && Date.now() - hit.at < FRESH_MS) {
     return { ...hit.result, via: "cache" };
   }
 
   const headers = new Headers(DEFAULT_HEADERS);
-
   if (options.headers) {
     for (const [key, value] of Object.entries(options.headers)) {
       headers.set(key, value);
@@ -234,7 +219,6 @@ async function upstream(url, options = {}) {
   for (let attempt = 0; attempt < UPSTREAM_ATTEMPTS; attempt++) {
     const needsCookie = robloxCookie !== "" && new URL(url).hostname === "badges.roblox.com";
     const attemptHeaders = new Headers(headers);
-
     if (needsCookie) {
       attemptHeaders.set("cookie", `.ROBLOSECURITY=${robloxCookie}`);
     }
@@ -254,9 +238,7 @@ async function upstream(url, options = {}) {
       log.push({ host: new URL(url).host, status: response.status });
 
       const text = await response.text();
-
       let data;
-
       try {
         data = text ? JSON.parse(text) : {};
       } catch {
@@ -273,7 +255,6 @@ async function upstream(url, options = {}) {
           via: url,
           attempts: log,
         };
-
         await sleep(600 * (attempt + 1) + Math.floor(Math.random() * 300));
         continue;
       }
@@ -291,10 +272,8 @@ async function upstream(url, options = {}) {
       }
 
       return result;
-
     } catch (error) {
       log.push({ host: new URL(url).host, status: "error" });
-
       last = {
         ok: false,
         status: 502,
@@ -320,23 +299,19 @@ async function upstream(url, options = {}) {
 
 async function proxy(url, options = {}) {
   const result = await upstream(url, options);
-
   return json(result.data, result.status);
 }
 
 async function aggregate(endpoints) {
   const lanes = {};
-
   for (const [key, endpoint] of Object.entries(endpoints)) {
     (lanes[LANES[key] || key] ||= []).push([key, endpoint]);
   }
 
   const results = {};
-
   await Promise.all(Object.values(lanes).map(async (lane) => {
     for (const [key, endpoint] of lane) {
       const result = typeof endpoint === "function" ? await endpoint() : await upstream(endpoint);
-
       results[key] = {
         success: result.ok,
         status: result.status,
@@ -346,7 +321,6 @@ async function aggregate(endpoints) {
       };
     }
   }));
-
   return results;
 }
 
@@ -373,9 +347,8 @@ async function handle(request) {
     return json({
       ok: true,
       service: "Roblox Profile Viewer API",
-      version: "3.3",
+      version: "3.4",
       description: "Public Roblox profile and game information API",
-
       categories: {
         users: [
           "/user/:userId",
@@ -384,7 +357,6 @@ async function handle(request) {
           "/username-history/:userId",
           "/full-profile/:userId",
         ],
-
         avatars: [
           "/avatar/:userId",
           "/avatar-thumbnail/:userId",
@@ -397,7 +369,6 @@ async function handle(request) {
           "/outfit-thumbnail/:outfitId",
           "/asset-thumbnail/:assetId",
         ],
-
         relationships: [
           "/friends/:userId",
           "/friends-count/:userId",
@@ -406,7 +377,6 @@ async function handle(request) {
           "/following/:userId",
           "/following-count/:userId",
         ],
-
         groups: [
           "/user-groups/:userId",
           "/group/:groupId",
@@ -420,7 +390,6 @@ async function handle(request) {
           "/group-store/:categoryId/:groupId",
           "/group-store-keyword/:categoryId/:keyword",
         ],
-
         games: [
           "/user-games/:userId",
           "/user-favorites/:userId",
@@ -431,17 +400,14 @@ async function handle(request) {
           "/game-thumbnails/:universeId",
           "/game-servers/:placeId",
         ],
-
         badges: [
           "/user-badges/:userId",
           "/badge/:badgeId",
         ],
-
         inventory: [
           "/inventory/:userId",
           "/collectibles/:userId",
         ],
-
         catalog: [
           "/catalog-search/:categoryId/:keyword",
           "/catalog-item/:assetId",
@@ -449,11 +415,9 @@ async function handle(request) {
           "/bundle-details/:bundleId",
           "/limited-resale/:assetId",
         ],
-
         presence: [
           "POST /presence/users",
         ],
-
         rolimons: [
           "/rolimons-player/:userId",
           "/rolimons-items",
@@ -463,26 +427,22 @@ async function handle(request) {
   }
 
   let p = routeMatch(path, /^\/user\/(\d+)$/);
-
   if (method === "GET" && p) {
     return respond(await rz(getUsersUserid, { userId: Number(p[0]) }, `${ROBLOX.users}/v1/users/${p[0]}`));
   }
 
   p = routeMatch(path, /^\/user-search\/(.+)$/);
-
   if (method === "GET" && p) {
     const query = new URLSearchParams({
       keyword: p[0],
       limit: String(getLimit(url, 10, 25)),
     });
-
     return proxy(
       `${ROBLOX.users}/v1/users/search?${query}`
     );
   }
 
   p = routeMatch(path, /^\/resolve-username\/([^/]+)$/);
-
   if (method === "GET" && p) {
     return proxy(
       `${ROBLOX.users}/v1/usernames/users`,
@@ -500,19 +460,14 @@ async function handle(request) {
   }
 
   p = routeMatch(path, /^\/username-history\/(\d+)$/);
-
   if (method === "GET" && p) {
     const wanted = getLimit(url, 100, 100);
     const limit = [10, 25, 50, 100].find(n => n >= wanted) || 100;
     const cursor = cleanCursor(url.searchParams.get("cursor"));
     const params = { userId: Number(p[0]), limit };
-
     if (cursor) params.cursor = cursor;
-
     const historyQuery = new URLSearchParams({ limit: String(limit) });
-
     if (cursor) historyQuery.set("cursor", cursor);
-
     return respond(await rz(
       getUsersUseridUsernameHistory,
       params,
@@ -521,7 +476,6 @@ async function handle(request) {
   }
 
   p = routeMatch(path, /^\/avatar\/(\d+)$/);
-
   if (method === "GET" && p) {
     return proxy(
       `${ROBLOX.avatar}/v1/users/${p[0]}/avatar`
@@ -529,29 +483,48 @@ async function handle(request) {
   }
 
   p = routeMatch(path, /^\/wearing\/(\d+)$/);
-
   if (method === "GET" && p) {
     return proxy(
       `${ROBLOX.avatar}/v1/users/${p[0]}/currently-wearing`
     );
   }
 
+  // ── OUTFITS (v2) ──────────────────────────────────────────────────────────
   p = routeMatch(path, /^\/outfits\/(\d+)$/);
-
   if (method === "GET" && p) {
     const query = new URLSearchParams({
       itemsPerPage: String(getLimit(url, 50, 100)),
-      page: String(asInt(url.searchParams.get("page"), 1, 1, 1000)),
-      isEditable: url.searchParams.get("isEditable") || "false",
     });
 
+    // Prefer paginationToken (v2 style). Fall back to page for compatibility.
+    const paginationToken = cleanCursor(
+      url.searchParams.get("paginationToken") || url.searchParams.get("cursor")
+    );
+    if (paginationToken) {
+      query.set("paginationToken", paginationToken);
+    } else {
+      const page = url.searchParams.get("page");
+      if (page) {
+        query.set("page", String(asInt(page, 1, 1, 1000)));
+      }
+    }
+
+    const isEditable = url.searchParams.get("isEditable");
+    if (isEditable !== null && isEditable !== "") {
+      query.set("isEditable", isEditable === "true" ? "true" : "false");
+    }
+
+    const outfitType = url.searchParams.get("outfitType"); // Avatar, DynamicHead, Shoes, Makeup...
+    if (outfitType) {
+      query.set("outfitType", outfitType);
+    }
+
     return proxy(
-      `${ROBLOX.avatar}/v1/users/${p[0]}/outfits?${query}`
+      `${ROBLOX.avatar}/v2/avatar/users/${p[0]}/outfits?${query}`
     );
   }
 
   p = routeMatch(path, /^\/outfit-details\/(\d+)$/);
-
   if (method === "GET" && p) {
     return proxy(
       `${ROBLOX.avatar}/v1/outfits/${p[0]}/details`
@@ -559,7 +532,6 @@ async function handle(request) {
   }
 
   p = routeMatch(path, /^\/avatar-thumbnail\/(\d+)$/);
-
   if (method === "GET" && p) {
     const query = new URLSearchParams({
       userIds: p[0],
@@ -567,14 +539,12 @@ async function handle(request) {
       format: url.searchParams.get("format") || "Png",
       isCircular: url.searchParams.get("isCircular") || "false",
     });
-
     return proxy(
       `${ROBLOX.thumbnails}/v1/users/avatar?${query}`
     );
   }
 
   p = routeMatch(path, /^\/headshot\/(\d+)$/);
-
   if (method === "GET" && p) {
     const query = new URLSearchParams({
       userIds: p[0],
@@ -582,35 +552,30 @@ async function handle(request) {
       format: url.searchParams.get("format") || "Png",
       isCircular: url.searchParams.get("isCircular") || "false",
     });
-
     return proxy(
       `${ROBLOX.thumbnails}/v1/users/avatar-headshot?${query}`
     );
   }
 
   p = routeMatch(path, /^\/outfit-thumbnail\/(\d+)$/);
-
   if (method === "GET" && p) {
     const query = new URLSearchParams({
       userOutfitIds: p[0],
       size: url.searchParams.get("size") || "420x420",
       format: url.searchParams.get("format") || "Png",
     });
-
     return proxy(
       `${ROBLOX.thumbnails}/v1/users/outfits?${query}`
     );
   }
 
   p = routeMatch(path, /^\/asset-thumbnail\/(\d+)$/);
-
   if (method === "GET" && p) {
     const query = new URLSearchParams({
       assetIds: p[0],
       size: url.searchParams.get("size") || "420x420",
       format: url.searchParams.get("format") || "Png",
     });
-
     return proxy(
       `${ROBLOX.thumbnails}/v1/assets?${query}`
     );
@@ -622,14 +587,12 @@ async function handle(request) {
         url.searchParams.get("userIds"),
         50
       );
-
       if (!ids.length) {
         return json({
           ok: false,
           error: "Provide userIds.",
         }, 400);
       }
-
       const query = new URLSearchParams({
         userIds: ids.join(","),
         size: url.searchParams.get("size") ||
@@ -637,11 +600,9 @@ async function handle(request) {
         format: "Png",
         isCircular: "false",
       });
-
       const endpoint = type === "avatars"
         ? "avatar"
         : "avatar-headshot";
-
       return proxy(
         `${ROBLOX.thumbnails}/v1/users/${endpoint}?${query}`
       );
@@ -653,14 +614,11 @@ async function handle(request) {
     ["followers", "followers"],
     ["following", "followings"],
   ];
-
   if (method === "GET") {
     for (const [route, endpoint] of relationshipRoutes) {
       p = routeMatch(path, new RegExp(`^/${route}/(\\d+)$`));
-
       if (p) {
         const query = pagination(url, 50, 100);
-
         return proxy(
           `${ROBLOX.friends}/v1/users/${p[0]}/${endpoint}?${query}`
         );
@@ -673,11 +631,9 @@ async function handle(request) {
     ["followers-count", getUsersTargetuseridFollowersCount, "targetUserId", "followers"],
     ["following-count", getUsersTargetuseridFollowingsCount, "targetUserId", "followings"],
   ];
-
   if (method === "GET") {
     for (const [route, endpoint, key, segment] of countRoutes) {
       p = routeMatch(path, new RegExp(`^/${route}/(\\d+)$`));
-
       if (p) {
         return respond(await rz(endpoint, { [key]: Number(p[0]) }, `${ROBLOX.friends}/v1/users/${p[0]}/${segment}/count`));
       }
@@ -685,7 +641,6 @@ async function handle(request) {
   }
 
   p = routeMatch(path, /^\/user-groups\/(\d+)$/);
-
   if (method === "GET" && p) {
     return proxy(
       `${ROBLOX.groups}/v2/users/${p[0]}/groups/roles`
@@ -693,7 +648,6 @@ async function handle(request) {
   }
 
   p = routeMatch(path, /^\/group\/(\d+)$/);
-
   if (method === "GET" && p) {
     return proxy(
       `${ROBLOX.groups}/v1/groups/${p[0]}`
@@ -701,21 +655,18 @@ async function handle(request) {
   }
 
   p = routeMatch(path, /^\/group-icon\/(\d+)$/);
-
   if (method === "GET" && p) {
     const query = new URLSearchParams({
       groupIds: p[0],
       size: url.searchParams.get("size") || "420x420",
       format: "Png",
     });
-
     return proxy(
       `${ROBLOX.thumbnails}/v1/groups/icons?${query}`
     );
   }
 
   p = routeMatch(path, /^\/group-roles\/(\d+)$/);
-
   if (method === "GET" && p) {
     return proxy(
       `${ROBLOX.groups}/v1/groups/${p[0]}/roles`
@@ -723,18 +674,14 @@ async function handle(request) {
   }
 
   p = routeMatch(path, /^\/group-role-details\/(\d+)\/(\d+)$/);
-
   if (method === "GET" && p) {
     const result = await upstream(
       `${ROBLOX.groups}/v1/groups/${p[0]}/roles`
     );
-
     if (!result.ok) {
       return json(result.data, result.status);
     }
-
     const roles = result.data?.roles || [];
-
     return json({
       groupId: Number(p[0]),
       role: roles.find(
@@ -744,36 +691,29 @@ async function handle(request) {
   }
 
   p = routeMatch(path, /^\/group-members\/(\d+)$/);
-
   if (method === "GET" && p) {
     const query = pagination(url, 100, 100);
-
     return proxy(
       `${ROBLOX.groups}/v1/groups/${p[0]}/users?${query}`
     );
   }
 
   p = routeMatch(path, /^\/group-role-users\/(\d+)\/(\d+)$/);
-
   if (method === "GET" && p) {
     const query = pagination(url, 100, 100);
-
     return proxy(
       `${ROBLOX.groups}/v1/groups/${p[0]}/roles/${p[1]}/users?${query}`
     );
   }
 
   p = routeMatch(path, /^\/group-member-count\/(\d+)$/);
-
   if (method === "GET" && p) {
     const result = await upstream(
       `${ROBLOX.groups}/v1/groups/${p[0]}`
     );
-
     if (!result.ok) {
       return json(result.data, result.status);
     }
-
     return json({
       groupId: Number(p[0]),
       memberCount: result.data.memberCount ?? null,
@@ -781,15 +721,12 @@ async function handle(request) {
   }
 
   p = routeMatch(path, /^\/group-games\/(\d+)$/);
-
   if (method === "GET" && p) {
     const query = pagination(url, 50, 50);
-
     query.set(
       "accessFilter",
       url.searchParams.get("accessFilter") || "Public"
     );
-
     return proxy(
       `${ROBLOX.games}/v2/groups/${p[0]}/games?${query}`
     );
@@ -797,7 +734,6 @@ async function handle(request) {
 
   if (method === "POST" && path === "/presence/users") {
     let body;
-
     try {
       body = await request.json();
     } catch {
@@ -806,21 +742,18 @@ async function handle(request) {
         error: "Request body must be valid JSON.",
       }, 400);
     }
-
     const userIds = Array.isArray(body?.userIds)
       ? body.userIds
           .map(Number)
           .filter(id => Number.isSafeInteger(id) && id > 0)
           .slice(0, 50)
       : [];
-
     if (!userIds.length) {
       return json({
         ok: false,
         error: "Provide userIds.",
       }, 400);
     }
-
     return proxy(
       `${ROBLOX.presence}/v1/presence/users`,
       {
@@ -834,17 +767,14 @@ async function handle(request) {
   }
 
   p = routeMatch(path, /^\/user-badges\/(\d+)$/);
-
   if (method === "GET" && p) {
     const query = pagination(url, 50, 100);
-
     return proxy(
       `${ROBLOX.badges}/v1/users/${p[0]}/badges?${query}`
     );
   }
 
   p = routeMatch(path, /^\/badge\/(\d+)$/);
-
   if (method === "GET" && p) {
     return proxy(
       `${ROBLOX.badges}/v1/badges/${p[0]}`
@@ -852,71 +782,55 @@ async function handle(request) {
   }
 
   p = routeMatch(path, /^\/collectibles\/(\d+)$/);
-
   if (method === "GET" && p) {
     const query = pagination(url, 100, 100);
-
     return proxy(
       `${ROBLOX.economy}/v2/users/${p[0]}/assets/collectibles?${query}`
     );
   }
 
   p = routeMatch(path, /^\/inventory\/(\d+)$/);
-
   if (method === "GET" && p) {
     const query = pagination(url, 50, 100);
-
     const assetType = url.searchParams.get("assetType");
-
     if (assetType && validId(assetType)) {
       query.set("assetType", assetType);
     }
-
     return proxy(
       `${ROBLOX.inventory}/v1/users/${p[0]}/assets/collectibles?${query}`
     );
   }
 
   p = routeMatch(path, /^\/user-games\/(\d+)$/);
-
   if (method === "GET" && p) {
     const query = pagination(url, 50, 50);
-
     query.set("accessFilter", "Public");
-
     return proxy(
       `${ROBLOX.games}/v2/users/${p[0]}/games?${query}`
     );
   }
 
   p = routeMatch(path, /^\/user-favorites\/(\d+)$/);
-
   if (method === "GET" && p) {
     const query = pagination(url, 50, 50);
-
     query.set("accessFilter", "Public");
-
     return proxy(
       `${ROBLOX.games}/v2/users/${p[0]}/favorite/games?${query}`
     );
   }
 
   p = routeMatch(path, /^\/games-info\/([0-9,]+)$/);
-
   if (method === "GET" && p) {
     const ids = numericIds(p[0], 100);
-
     if (!ids.length) {
       return json({ data: [] }, 400);
     }
-
     return proxy(
       `${ROBLOX.games}/v1/games?universeIds=${ids.join(",")}`
     );
   }
 
   p = routeMatch(path, /^\/game-details\/(\d+)$/);
-
   if (method === "GET" && p) {
     return proxy(
       `${ROBLOX.games}/v1/games?universeIds=${p[0]}`
@@ -924,7 +838,6 @@ async function handle(request) {
   }
 
   p = routeMatch(path, /^\/game-votes\/(\d+)$/);
-
   if (method === "GET" && p) {
     return proxy(
       `${ROBLOX.games}/v1/games/${p[0]}/votes`
@@ -932,31 +845,26 @@ async function handle(request) {
   }
 
   p = routeMatch(path, /^\/game-servers\/(\d+)$/);
-
   if (method === "GET" && p) {
     const query = pagination(url, 25, 100);
-
     return proxy(
       `${ROBLOX.games}/v1/games/${p[0]}/servers/Public?${query}`
     );
   }
 
   p = routeMatch(path, /^\/game-icon\/(\d+)$/);
-
   if (method === "GET" && p) {
     const query = new URLSearchParams({
       universeIds: p[0],
       size: url.searchParams.get("size") || "512x512",
       format: "Png",
     });
-
     return proxy(
       `${ROBLOX.thumbnails}/v1/games/icons?${query}`
     );
   }
 
   p = routeMatch(path, /^\/game-thumbnails\/(\d+)$/);
-
   if (method === "GET" && p) {
     const query = new URLSearchParams({
       universeIds: p[0],
@@ -970,14 +878,12 @@ async function handle(request) {
       format: "Png",
       isCircular: "false",
     });
-
     return proxy(
       `${ROBLOX.thumbnails}/v1/games/multiget/thumbnails?${query}`
     );
   }
 
   p = routeMatch(path, /^\/catalog-search\/([^/]+)\/(.*)$/);
-
   if (method === "GET" && p) {
     const query = new URLSearchParams({
       category: p[0],
@@ -985,20 +891,16 @@ async function handle(request) {
       limit: String(getLimit(url, 30, 120)),
       sortType: url.searchParams.get("sortType") || "Relevance",
     });
-
     const subcategory = url.searchParams.get("subcategory");
-
     if (subcategory) {
       query.set("subcategory", subcategory);
     }
-
     return proxy(
       `${ROBLOX.catalog}/v1/search/items?${query}`
     );
   }
 
   p = routeMatch(path, /^\/catalog-item\/(\d+)$/);
-
   if (method === "GET" && p) {
     return proxy(
       `${ROBLOX.catalog}/v1/catalog/items/details`,
@@ -1018,7 +920,6 @@ async function handle(request) {
   }
 
   p = routeMatch(path, /^\/asset-bundles\/(\d+)$/);
-
   if (method === "GET" && p) {
     return proxy(
       `${ROBLOX.catalog}/v1/assets/${p[0]}/bundles?sortOrder=Asc`
@@ -1026,7 +927,6 @@ async function handle(request) {
   }
 
   p = routeMatch(path, /^\/bundle-details\/(\d+)$/);
-
   if (method === "GET" && p) {
     return proxy(
       `${ROBLOX.catalog}/v1/bundles/${p[0]}/details`
@@ -1034,7 +934,6 @@ async function handle(request) {
   }
 
   p = routeMatch(path, /^\/limited-resale\/(\d+)$/);
-
   if (method === "GET" && p) {
     return proxy(
       `${ROBLOX.economy}/v1/assets/${p[0]}/resale-data`
@@ -1042,7 +941,6 @@ async function handle(request) {
   }
 
   p = routeMatch(path, /^\/group-store\/([^/]+)\/(\d+)$/);
-
   if (method === "GET" && p) {
     const query = new URLSearchParams({
       category: p[0],
@@ -1051,14 +949,12 @@ async function handle(request) {
       limit: String(getLimit(url, 30, 120)),
       sortType: url.searchParams.get("sortType") || "Relevance",
     });
-
     return proxy(
       `${ROBLOX.catalog}/v1/search/items?${query}`
     );
   }
 
   p = routeMatch(path, /^\/group-store-keyword\/([^/]+)\/(.*)$/);
-
   if (method === "GET" && p) {
     const query = new URLSearchParams({
       category: p[0],
@@ -1066,21 +962,18 @@ async function handle(request) {
       limit: String(getLimit(url, 30, 120)),
       sortType: url.searchParams.get("sortType") || "Relevance",
     });
-
     const groupId = url.searchParams.get("groupId");
-
     if (groupId && validId(groupId)) {
       query.set("creatorTargetId", groupId);
       query.set("creatorType", "Group");
     }
-
     return proxy(
       `${ROBLOX.catalog}/v1/search/items?${query}`
     );
   }
 
+  // ── ROLIMONS ──────────────────────────────────────────────────────────────
   p = routeMatch(path, /^\/rolimons-player\/(\d+)$/);
-
   if (method === "GET" && p) {
     return proxy(
       `${ROLIMONS}/players/v1/playerinfo/${p[0]}`
@@ -1093,50 +986,38 @@ async function handle(request) {
     );
   }
 
+  // ── FULL PROFILE ──────────────────────────────────────────────────────────
   p = routeMatch(path, /^\/full-profile\/(\d+)$/);
-
   if (method === "GET" && p) {
     const userId = p[0];
-
     const sections = {
       profile:
         () => rz(getUsersUserid, { userId: Number(userId) }, `${ROBLOX.users}/v1/users/${userId}`),
-
       avatar:
         `${ROBLOX.avatar}/v1/users/${userId}/avatar`,
-
       wearing:
         `${ROBLOX.avatar}/v1/users/${userId}/currently-wearing`,
-
       outfits:
-        `${ROBLOX.avatar}/v1/users/${userId}/outfits?itemsPerPage=50&page=1&isEditable=false`,
-
+        `${ROBLOX.avatar}/v2/avatar/users/${userId}/outfits?itemsPerPage=50&isEditable=false`,
       usernameHistory:
         () => rz(getUsersUseridUsernameHistory, { userId: Number(userId), limit: 100 }, `${ROBLOX.users}/v1/users/${userId}/username-history?limit=100`),
-
       groups:
         `${ROBLOX.groups}/v2/users/${userId}/groups/roles`,
-
       friendsCount:
         () => rz(getUsersUseridFriendsCount, { userId: Number(userId) }, `${ROBLOX.friends}/v1/users/${userId}/friends/count`),
-
       followersCount:
         () => rz(getUsersTargetuseridFollowersCount, { targetUserId: Number(userId) }, `${ROBLOX.friends}/v1/users/${userId}/followers/count`),
-
       followingCount:
         () => rz(getUsersTargetuseridFollowingsCount, { targetUserId: Number(userId) }, `${ROBLOX.friends}/v1/users/${userId}/followings/count`),
-
       badges:
         `${ROBLOX.badges}/v1/users/${userId}/badges?limit=50&sortOrder=Asc`,
     };
 
     const requested = url.searchParams.get("sections");
-
     if (requested) {
       const selected = requested
         .split(",")
         .map(value => value.trim());
-
       for (const key of Object.keys(sections)) {
         if (!selected.includes(key)) {
           delete sections[key];
@@ -1145,7 +1026,6 @@ async function handle(request) {
     }
 
     const profile = await aggregate(sections);
-
     return json({
       ok: true,
       userId: Number(userId),
@@ -1164,10 +1044,8 @@ async function handle(request) {
 export default {
   async fetch(request, env, ctx) {
     robloxCookie = env && env.ROBLOX_COOKIE ? String(env.ROBLOX_COOKIE).trim() : "";
-
     try {
       return await handle(request);
-
     } catch (error) {
       return json({
         ok: false,
