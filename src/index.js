@@ -23,7 +23,7 @@ const ROBLOX = {
 const ROLIMONS = "https://api.rolimons.com";
 
 const DEFAULT_HEADERS = {
-  "user-agent": "ProfileViewer-CloudflareWorker/3.0",
+  "user-agent": "ProfileViewer-CloudflareWorker/3.1",
   "accept": "application/json",
 };
 
@@ -112,44 +112,54 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function rz(endpoint, params) {
+async function rz(endpoint, params, fallbackUrl) {
+  let result = null;
+
   try {
-    const response = await fetchApi(endpoint, params, {
-      returnRaw: true,
-      retries: 4,
-      retryDelay: 800,
-    });
+    const response = await Promise.race([
+      fetchApi(endpoint, params, { returnRaw: true, retries: 0 }),
+      sleep(6000).then(() => null),
+    ]);
 
-    const text = await response.text();
+    if (response) {
+      const text = await response.text();
 
-    let data;
+      let data;
 
-    try {
-      data = text ? JSON.parse(text) : {};
-    } catch {
-      data = { raw: text.slice(0, 2000) };
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { raw: text.slice(0, 2000) };
+      }
+
+      result = {
+        ok: response.ok,
+        status: response.status,
+        data,
+        via: "rozod",
+      };
     }
+  } catch {}
 
-    return {
-      ok: response.ok,
-      status: response.status,
-      data,
-      via: "rozod",
-    };
+  const finalClientError = result
+    && result.status >= 400
+    && result.status < 500
+    && result.status !== 429;
 
-  } catch (error) {
-    return {
-      ok: false,
-      status: 502,
-      data: {
-        errors: [{
-          message: "RoZod request failed",
-          details: String(error),
-        }],
-      },
-      via: "rozod",
-    };
+  if (result && (result.ok || finalClientError)) {
+    return result;
   }
+
+  if (fallbackUrl) {
+    return upstream(fallbackUrl);
+  }
+
+  return result || {
+    ok: false,
+    status: 502,
+    data: { errors: [{ message: "RoZod request failed" }] },
+    via: "rozod",
+  };
 }
 
 function respond(result) {
@@ -303,7 +313,7 @@ async function handle(request) {
     return json({
       ok: true,
       service: "Roblox Profile Viewer API",
-      version: "3.0",
+      version: "3.1",
       description: "Public Roblox profile and game information API",
 
       categories: {
@@ -395,7 +405,7 @@ async function handle(request) {
   let p = routeMatch(path, /^\/user\/(\d+)$/);
 
   if (method === "GET" && p) {
-    return respond(await rz(getUsersUserid, { userId: Number(p[0]) }));
+    return respond(await rz(getUsersUserid, { userId: Number(p[0]) }, `${ROBLOX.users}/v1/users/${p[0]}`));
   }
 
   p = routeMatch(path, /^\/user-search\/(.+)$/);
@@ -439,7 +449,15 @@ async function handle(request) {
 
     if (cursor) params.cursor = cursor;
 
-    return respond(await rz(getUsersUseridUsernameHistory, params));
+    const historyQuery = new URLSearchParams({ limit: String(limit) });
+
+    if (cursor) historyQuery.set("cursor", cursor);
+
+    return respond(await rz(
+      getUsersUseridUsernameHistory,
+      params,
+      `${ROBLOX.users}/v1/users/${p[0]}/username-history?${historyQuery}`
+    ));
   }
 
   p = routeMatch(path, /^\/avatar\/(\d+)$/);
@@ -591,17 +609,17 @@ async function handle(request) {
   }
 
   const countRoutes = [
-    ["friends-count", getUsersUseridFriendsCount, "userId"],
-    ["followers-count", getUsersTargetuseridFollowersCount, "targetUserId"],
-    ["following-count", getUsersTargetuseridFollowingsCount, "targetUserId"],
+    ["friends-count", getUsersUseridFriendsCount, "userId", "friends"],
+    ["followers-count", getUsersTargetuseridFollowersCount, "targetUserId", "followers"],
+    ["following-count", getUsersTargetuseridFollowingsCount, "targetUserId", "followings"],
   ];
 
   if (method === "GET") {
-    for (const [route, endpoint, key] of countRoutes) {
+    for (const [route, endpoint, key, segment] of countRoutes) {
       p = routeMatch(path, new RegExp(`^/${route}/(\\d+)$`));
 
       if (p) {
-        return respond(await rz(endpoint, { [key]: Number(p[0]) }));
+        return respond(await rz(endpoint, { [key]: Number(p[0]) }, `${ROBLOX.friends}/v1/users/${p[0]}/${segment}/count`));
       }
     }
   }
@@ -1022,7 +1040,7 @@ async function handle(request) {
 
     const sections = {
       profile:
-        () => rz(getUsersUserid, { userId: Number(userId) }),
+        () => rz(getUsersUserid, { userId: Number(userId) }, `${ROBLOX.users}/v1/users/${userId}`),
 
       avatar:
         `${ROBLOX.avatar}/v1/users/${userId}/avatar`,
@@ -1034,19 +1052,19 @@ async function handle(request) {
         `${ROBLOX.avatar}/v1/users/${userId}/outfits?itemsPerPage=50&page=1&isEditable=false`,
 
       usernameHistory:
-        () => rz(getUsersUseridUsernameHistory, { userId: Number(userId), limit: 100 }),
+        () => rz(getUsersUseridUsernameHistory, { userId: Number(userId), limit: 100 }, `${ROBLOX.users}/v1/users/${userId}/username-history?limit=100`),
 
       groups:
         `${ROBLOX.groups}/v2/users/${userId}/groups/roles`,
 
       friendsCount:
-        () => rz(getUsersUseridFriendsCount, { userId: Number(userId) }),
+        () => rz(getUsersUseridFriendsCount, { userId: Number(userId) }, `${ROBLOX.friends}/v1/users/${userId}/friends/count`),
 
       followersCount:
-        () => rz(getUsersTargetuseridFollowersCount, { targetUserId: Number(userId) }),
+        () => rz(getUsersTargetuseridFollowersCount, { targetUserId: Number(userId) }, `${ROBLOX.friends}/v1/users/${userId}/followers/count`),
 
       followingCount:
-        () => rz(getUsersTargetuseridFollowingsCount, { targetUserId: Number(userId) }),
+        () => rz(getUsersTargetuseridFollowingsCount, { targetUserId: Number(userId) }, `${ROBLOX.friends}/v1/users/${userId}/followings/count`),
 
       badges:
         `${ROBLOX.badges}/v1/users/${userId}/badges?limit=50&sortOrder=Asc`,
