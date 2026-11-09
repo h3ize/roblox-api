@@ -168,10 +168,6 @@ function respond(result) {
   return json(result.data, result.status);
 }
 
-function mirrorUrl(url) {
-  return url.replace(/^https:\/\/([a-z]+)\.roblox\.com/, "https://$1.roproxy.com");
-}
-
 async function upstream(url, options = {}) {
   const method = options.method || "GET";
   const headers = new Headers(DEFAULT_HEADERS);
@@ -187,7 +183,6 @@ async function upstream(url, options = {}) {
 
   for (let attempt = 0; attempt < UPSTREAM_ATTEMPTS; attempt++) {
     const needsCookie = robloxCookie !== "" && new URL(url).hostname === "badges.roblox.com";
-    const target = !needsCookie && attempt % 2 === 1 ? mirrorUrl(url) : url;
     const attemptHeaders = new Headers(headers);
 
     if (needsCookie) {
@@ -195,7 +190,7 @@ async function upstream(url, options = {}) {
     }
 
     try {
-      const response = await fetch(target, {
+      const response = await fetch(url, {
         method,
         headers: attemptHeaders,
         body: options.body,
@@ -206,7 +201,7 @@ async function upstream(url, options = {}) {
         },
       });
 
-      log.push({ host: new URL(target).host, status: response.status });
+      log.push({ host: new URL(url).host, status: response.status });
 
       const text = await response.text();
 
@@ -225,7 +220,7 @@ async function upstream(url, options = {}) {
           ok: false,
           status: 429,
           data,
-          via: target,
+          via: url,
           attempts: log,
         };
 
@@ -237,12 +232,12 @@ async function upstream(url, options = {}) {
         ok: response.ok,
         status: response.status,
         data,
-        via: target,
+        via: url,
         attempts: log,
       };
 
     } catch (error) {
-      log.push({ host: new URL(target).host, status: "error" });
+      log.push({ host: new URL(url).host, status: "error" });
 
       last = {
         ok: false,
@@ -253,7 +248,7 @@ async function upstream(url, options = {}) {
             details: String(error),
           }],
         },
-        via: target,
+        via: url,
         attempts: log,
       };
     }
