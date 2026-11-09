@@ -1,0 +1,9 @@
+{
+  "name": "roblox-api",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "rozod": "^6.6.0"
+  }
+}
