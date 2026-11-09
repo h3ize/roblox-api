@@ -23,12 +23,14 @@ const ROBLOX = {
 const ROLIMONS = "https://api.rolimons.com";
 
 const DEFAULT_HEADERS = {
-  "user-agent": "ProfileViewer-CloudflareWorker/3.1",
+  "user-agent": "ProfileViewer-CloudflareWorker/3.2",
   "accept": "application/json",
 };
 
 const AGGREGATE_BATCH_SIZE = 2;
 const UPSTREAM_ATTEMPTS = 4;
+
+let robloxCookie = "";
 
 function corsHeaders() {
   return {
@@ -184,12 +186,18 @@ async function upstream(url, options = {}) {
   const log = [];
 
   for (let attempt = 0; attempt < UPSTREAM_ATTEMPTS; attempt++) {
-    const target = attempt % 2 === 1 ? mirrorUrl(url) : url;
+    const needsCookie = robloxCookie !== "" && new URL(url).hostname === "badges.roblox.com";
+    const target = !needsCookie && attempt % 2 === 1 ? mirrorUrl(url) : url;
+    const attemptHeaders = new Headers(headers);
+
+    if (needsCookie) {
+      attemptHeaders.set("cookie", `.ROBLOSECURITY=${robloxCookie}`);
+    }
 
     try {
       const response = await fetch(target, {
         method,
-        headers,
+        headers: attemptHeaders,
         body: options.body,
         redirect: "follow",
         signal: AbortSignal.timeout(12000),
@@ -313,7 +321,7 @@ async function handle(request) {
     return json({
       ok: true,
       service: "Roblox Profile Viewer API",
-      version: "3.1",
+      version: "3.2",
       description: "Public Roblox profile and game information API",
 
       categories: {
@@ -1103,6 +1111,8 @@ async function handle(request) {
 
 export default {
   async fetch(request, env, ctx) {
+    robloxCookie = env && env.ROBLOX_COOKIE ? String(env.ROBLOX_COOKIE).trim() : "";
+
     try {
       return await handle(request);
 
