@@ -23,12 +23,45 @@ const ROBLOX = {
 const ROLIMONS = "https://api.rolimons.com";
 
 const DEFAULT_HEADERS = {
-  "user-agent": "ProfileViewer-CloudflareWorker/3.2",
+  "user-agent": "ProfileViewer-CloudflareWorker/3.3",
   "accept": "application/json",
 };
 
-const AGGREGATE_BATCH_SIZE = 2;
 const UPSTREAM_ATTEMPTS = 4;
+
+// Per-host lanes for /full-profile: different hosts run at the same time,
+// requests to the same host run one after another.
+const LANES = {
+  profile: "users",
+  usernameHistory: "users",
+  avatar: "avatar",
+  wearing: "avatar",
+  outfits: "avatar",
+  groups: "groups",
+  friendsCount: "friends",
+  followersCount: "friends",
+  followingCount: "friends",
+  badges: "badges",
+};
+
+// In-memory cache (per isolate, best effort).
+// Fresh entries are served instantly; stale entries are served when Roblox rate limits us.
+const MEM = new Map();
+const FRESH_MS = 5 * 60_000;
+const STALE_MS = 60 * 60_000;
+
+function memGet(key) {
+  const entry = MEM.get(key);
+  return entry && Date.now() - entry.at < STALE_MS ? entry : null;
+}
+
+function memSet(key, result) {
+  MEM.set(key, { at: Date.now(), result });
+
+  if (MEM.size > 500) {
+    MEM.delete(MEM.keys().next().value);
+  }
+}
 
 let robloxCookie = "";
 
@@ -115,6 +148,12 @@ function sleep(ms) {
 }
 
 async function rz(endpoint, params, fallbackUrl) {
+  const cachedHit = fallbackUrl ? memGet(fallbackUrl) : null;
+
+  if (cachedHit && Date.now() - cachedHit.at < FRESH_MS) {
+    return { ...cachedHit.result, via: "cache" };
+  }
+
   let result = null;
 
   try {
@@ -149,6 +188,10 @@ async function rz(endpoint, params, fallbackUrl) {
     && result.status !== 429;
 
   if (result && (result.ok || finalClientError)) {
+    if (result.ok && fallbackUrl) {
+      memSet(fallbackUrl, result);
+    }
+
     return result;
   }
 
@@ -170,6 +213,13 @@ function respond(result) {
 
 async function upstream(url, options = {}) {
   const method = options.method || "GET";
+
+  const hit = method === "GET" ? memGet(url) : null;
+
+  if (hit && Date.now() - hit.at < FRESH_MS) {
+    return { ...hit.result, via: "cache" };
+  }
+
   const headers = new Headers(DEFAULT_HEADERS);
 
   if (options.headers) {
@@ -228,13 +278,19 @@ async function upstream(url, options = {}) {
         continue;
       }
 
-      return {
+      const result = {
         ok: response.ok,
         status: response.status,
         data,
         via: url,
         attempts: log,
       };
+
+      if (method === "GET" && response.ok) {
+        memSet(url, result);
+      }
+
+      return result;
 
     } catch (error) {
       log.push({ host: new URL(url).host, status: "error" });
@@ -254,6 +310,11 @@ async function upstream(url, options = {}) {
     }
   }
 
+  // Rate limited or failing: serve the last good copy if we have one
+  if (hit) {
+    return { ...hit.result, via: "stale-cache" };
+  }
+
   return last;
 }
 
@@ -264,41 +325,27 @@ async function proxy(url, options = {}) {
 }
 
 async function aggregate(endpoints) {
-  const run = async (endpoint) => {
-    const result = typeof endpoint === "function" ? await endpoint() : await upstream(endpoint);
+  const lanes = {};
 
-    return {
-      success: result.ok,
-      status: result.status,
-      via: result.via,
-      attempts: result.attempts,
-      data: result.data,
-    };
-  };
+  for (const [key, endpoint] of Object.entries(endpoints)) {
+    (lanes[LANES[key] || key] ||= []).push([key, endpoint]);
+  }
 
-  const entries = Object.entries(endpoints);
   const results = {};
 
-  for (let i = 0; i < entries.length; i += AGGREGATE_BATCH_SIZE) {
-    const batch = entries.slice(i, i + AGGREGATE_BATCH_SIZE);
+  await Promise.all(Object.values(lanes).map(async (lane) => {
+    for (const [key, endpoint] of lane) {
+      const result = typeof endpoint === "function" ? await endpoint() : await upstream(endpoint);
 
-    await Promise.all(
-      batch.map(async ([key, endpoint]) => {
-        results[key] = await run(endpoint);
-      })
-    );
-  }
-
-  const limited = entries.filter(([key]) => results[key].status === 429);
-
-  if (limited.length) {
-    await sleep(2500);
-
-    for (const [key, endpoint] of limited) {
-      results[key] = await run(endpoint);
-      await sleep(500);
+      results[key] = {
+        success: result.ok,
+        status: result.status,
+        via: result.via,
+        attempts: result.attempts,
+        data: result.data,
+      };
     }
-  }
+  }));
 
   return results;
 }
@@ -326,7 +373,7 @@ async function handle(request) {
     return json({
       ok: true,
       service: "Roblox Profile Viewer API",
-      version: "3.2",
+      version: "3.3",
       description: "Public Roblox profile and game information API",
 
       categories: {
